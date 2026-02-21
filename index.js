@@ -15,38 +15,29 @@ app.use(express.json());
 const storage = multer.memoryStorage();
 const upload = multer({ storage });
 
-// ======================
-// GEMINI SETUP (v1 SAFE)
-// ======================
+// ================== GEMINI SETUP ==================
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
-const model = genAI.getGenerativeModel({ model: "gemini-pro" });
+const model = genAI.getGenerativeModel({
+  model: "gemini-1.5-flash-latest"
+});
 
-// ======================
-// ROOT ROUTE
-// ======================
+// ================== ROOT ==================
 app.get("/", (req, res) => {
   res.send("ResuTransformer backend running 🚀");
 });
 
-// ======================
-// TEST AI ROUTE
-// ======================
+// ================== TEST AI ==================
 app.get("/test-ai", async (req, res) => {
   try {
-    const result = await model.generateContent("Say hello");
+    const result = await model.generateContent("Say hello professionally");
     const response = await result.response;
-    const text = response.text();
-
-    res.json({ success: true, reply: text });
+    res.json({ success: true, reply: response.text() });
   } catch (error) {
-    console.error("AI TEST ERROR:", error);
     res.status(500).json({ error: error.message });
   }
 });
 
-// ======================
-// FILE UPLOAD + EXTRACTION
-// ======================
+// ================== FILE UPLOAD ==================
 app.post("/upload", upload.single("resume"), async (req, res) => {
   try {
     if (!req.file) {
@@ -75,7 +66,7 @@ app.post("/upload", upload.single("resume"), async (req, res) => {
       "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
     ) {
       const result = await mammoth.extractRawText({
-        buffer: req.file.buffer,
+        buffer: req.file.buffer
       });
       extractedText = result.value;
     }
@@ -87,34 +78,31 @@ app.post("/upload", upload.single("resume"), async (req, res) => {
     res.json({
       message: "Text extracted successfully 🚀",
       preview: extractedText.substring(0, 2000),
-      fullText: extractedText,
+      fullText: extractedText
     });
 
   } catch (error) {
-    console.error("UPLOAD ERROR:", error);
     res.status(500).json({ message: "Error processing file" });
   }
 });
 
-// ======================
-// AI ANALYSIS ROUTE
-// ======================
+// ================== ANALYZE ==================
 app.post("/analyze", async (req, res) => {
   try {
     const { resumeText, role } = req.body;
 
     if (!resumeText || !role) {
       return res.status(400).json({
-        message: "Resume text and role are required",
+        message: "Resume text and role are required"
       });
     }
 
     const prompt = `
 You are a professional resume evaluator.
 
-Analyze the resume below for the role: ${role}
+Analyze the resume for the role: ${role}
 
-Return ONLY valid JSON in this format:
+Return ONLY valid JSON in this structure:
 
 {
   "analysis": {
@@ -145,12 +133,11 @@ ${resumeText}
 
     res.json({
       message: "AI analysis complete 🚀",
-      data: text,
+      data: text
     });
 
   } catch (error) {
-    console.error("ANALYSIS ERROR:", error);
-    res.status(500).json({ message: "AI analysis failed" });
+    res.status(500).json({ message: error.message });
   }
 });
 
