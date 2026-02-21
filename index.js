@@ -16,13 +16,13 @@ const storage = multer.memoryStorage();
 const upload = multer({ storage });
 
 // ======================
-// GEMINI SETUP
+// GEMINI SETUP (v1 SAFE)
 // ======================
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
-const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+const model = genAI.getGenerativeModel({ model: "gemini-pro" });
 
 // ======================
-// BASIC ROUTE
+// ROOT ROUTE
 // ======================
 app.get("/", (req, res) => {
   res.send("ResuTransformer backend running 🚀");
@@ -39,13 +39,13 @@ app.get("/test-ai", async (req, res) => {
 
     res.json({ success: true, reply: text });
   } catch (error) {
-    console.error(error);
+    console.error("AI TEST ERROR:", error);
     res.status(500).json({ error: error.message });
   }
 });
 
 // ======================
-// FILE UPLOAD + TEXT EXTRACTION
+// FILE UPLOAD + EXTRACTION
 // ======================
 app.post("/upload", upload.single("resume"), async (req, res) => {
   try {
@@ -56,13 +56,11 @@ app.post("/upload", upload.single("resume"), async (req, res) => {
     const fileType = req.file.mimetype;
     let extractedText = "";
 
-    // PDF
     if (fileType === "application/pdf") {
       const data = await pdfParse(req.file.buffer);
       extractedText = data.text;
     }
 
-    // IMAGE
     else if (
       fileType === "image/jpeg" ||
       fileType === "image/png" ||
@@ -72,7 +70,6 @@ app.post("/upload", upload.single("resume"), async (req, res) => {
       extractedText = result.data.text;
     }
 
-    // DOCX
     else if (
       fileType ===
       "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
@@ -94,7 +91,7 @@ app.post("/upload", upload.single("resume"), async (req, res) => {
     });
 
   } catch (error) {
-    console.error(error);
+    console.error("UPLOAD ERROR:", error);
     res.status(500).json({ message: "Error processing file" });
   }
 });
@@ -152,7 +149,7 @@ ${resumeText}
     });
 
   } catch (error) {
-    console.error(error);
+    console.error("ANALYSIS ERROR:", error);
     res.status(500).json({ message: "AI analysis failed" });
   }
 });
