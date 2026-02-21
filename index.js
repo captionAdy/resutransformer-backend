@@ -13,19 +13,40 @@ app.use(cors());
 app.use(express.json());
 
 const storage = multer.memoryStorage();
-const upload = multer({ storage: storage });
+const upload = multer({ storage });
 
-// ===== GEMINI SETUP =====
+// ======================
+// GEMINI SETUP
+// ======================
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
 const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
 
+// ======================
+// BASIC ROUTE
+// ======================
 app.get("/", (req, res) => {
   res.send("ResuTransformer backend running 🚀");
 });
 
-// ===============================
+// ======================
+// TEST AI ROUTE
+// ======================
+app.get("/test-ai", async (req, res) => {
+  try {
+    const result = await model.generateContent("Say hello");
+    const response = await result.response;
+    const text = response.text();
+
+    res.json({ success: true, reply: text });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// ======================
 // FILE UPLOAD + TEXT EXTRACTION
-// ===============================
+// ======================
 app.post("/upload", upload.single("resume"), async (req, res) => {
   try {
     if (!req.file) {
@@ -35,13 +56,13 @@ app.post("/upload", upload.single("resume"), async (req, res) => {
     const fileType = req.file.mimetype;
     let extractedText = "";
 
-    // ===== PDF =====
+    // PDF
     if (fileType === "application/pdf") {
       const data = await pdfParse(req.file.buffer);
       extractedText = data.text;
     }
 
-    // ===== IMAGE =====
+    // IMAGE
     else if (
       fileType === "image/jpeg" ||
       fileType === "image/png" ||
@@ -51,7 +72,7 @@ app.post("/upload", upload.single("resume"), async (req, res) => {
       extractedText = result.data.text;
     }
 
-    // ===== DOCX =====
+    // DOCX
     else if (
       fileType ===
       "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
@@ -66,10 +87,10 @@ app.post("/upload", upload.single("resume"), async (req, res) => {
       return res.status(400).json({ message: "Unsupported file type" });
     }
 
-    return res.json({
+    res.json({
       message: "Text extracted successfully 🚀",
       preview: extractedText.substring(0, 2000),
-      fullText: extractedText
+      fullText: extractedText,
     });
 
   } catch (error) {
@@ -78,16 +99,16 @@ app.post("/upload", upload.single("resume"), async (req, res) => {
   }
 });
 
-// ===============================
+// ======================
 // AI ANALYSIS ROUTE
-// ===============================
+// ======================
 app.post("/analyze", async (req, res) => {
   try {
     const { resumeText, role } = req.body;
 
     if (!resumeText || !role) {
       return res.status(400).json({
-        message: "Resume text and role are required"
+        message: "Resume text and role are required",
       });
     }
 
@@ -125,9 +146,9 @@ ${resumeText}
     const response = await result.response;
     const text = response.text();
 
-    return res.json({
+    res.json({
       message: "AI analysis complete 🚀",
-      data: text
+      data: text,
     });
 
   } catch (error) {
