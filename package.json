@@ -12,6 +12,6 @@
     "pdf-parse": "^1.1.1",
     "tesseract.js": "^4.0.2",
     "mammoth": "^1.6.0",
-    "@google/generative-ai": "^0.5.0"
+    "@google/genai": "^0.1.0"
   }
 }
