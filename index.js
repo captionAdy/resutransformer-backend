@@ -3,6 +3,7 @@ const multer = require("multer");
 const cors = require("cors");
 const pdfParse = require("pdf-parse");
 const Tesseract = require("tesseract.js");
+const mammoth = require("mammoth");
 
 const app = express();
 const PORT = process.env.PORT || 10000;
@@ -10,7 +11,7 @@ const PORT = process.env.PORT || 10000;
 app.use(cors());
 
 const storage = multer.memoryStorage();
-const upload = multer({ storage });
+const upload = multer({ storage: storage });
 
 app.get("/", (req, res) => {
   res.send("ResuTransformer backend running 🚀");
@@ -51,6 +52,21 @@ app.post("/upload", upload.single("resume"), async (req, res) => {
       });
     }
 
+    // ===== DOCX =====
+    if (
+      fileType ===
+      "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+    ) {
+      const result = await mammoth.extractRawText({
+        buffer: req.file.buffer
+      });
+
+      return res.json({
+        message: "Word text extracted successfully 🚀",
+        preview: result.value.substring(0, 2000)
+      });
+    }
+
     return res.status(400).json({
       message: "Unsupported file type"
     });
@@ -61,7 +77,7 @@ app.post("/upload", upload.single("resume"), async (req, res) => {
       message: "Error processing file"
     });
   }
-  });
+});
 
 app.listen(PORT, () => {
   console.log("Server started on port " + PORT);
