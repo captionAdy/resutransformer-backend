@@ -15,18 +15,18 @@ app.use(express.json());
 const storage = multer.memoryStorage();
 const upload = multer({ storage });
 
-// ================== GEMINI SETUP ==================
+// ================= GEMINI SETUP =================
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
 const model = genAI.getGenerativeModel({
-  model: "gemini-1.5-flash-latest"
+  model: "gemini-1.0-pro"
 });
 
-// ================== ROOT ==================
+// ================= ROOT =================
 app.get("/", (req, res) => {
   res.send("ResuTransformer backend running 🚀");
 });
 
-// ================== TEST AI ==================
+// ================= TEST AI =================
 app.get("/test-ai", async (req, res) => {
   try {
     const result = await model.generateContent("Say hello professionally");
@@ -37,7 +37,7 @@ app.get("/test-ai", async (req, res) => {
   }
 });
 
-// ================== FILE UPLOAD ==================
+// ================= FILE UPLOAD =================
 app.post("/upload", upload.single("resume"), async (req, res) => {
   try {
     if (!req.file) {
@@ -86,7 +86,7 @@ app.post("/upload", upload.single("resume"), async (req, res) => {
   }
 });
 
-// ================== ANALYZE ==================
+// ================= ANALYZE =================
 app.post("/analyze", async (req, res) => {
   try {
     const { resumeText, role } = req.body;
