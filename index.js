@@ -1,6 +1,7 @@
 const express = require("express");
 const multer = require("multer");
 const cors = require("cors");
+const pdfParse = require("pdf-parse");
 
 const app = express();
 const PORT = process.env.PORT || 10000;
@@ -18,16 +19,22 @@ app.get("/test-upload", (req, res) => {
   res.json({ message: "Upload route working ✅" });
 });
 
-app.post("/upload", upload.single("resume"), (req, res) => {
+app.post("/upload", upload.single("resume"), async (req, res) => {
   if (!req.file) {
     return res.status(400).json({ message: "No file uploaded" });
   }
 
-  res.json({
-    message: "File received successfully 🎉",
-    fileName: req.file.originalname,
-    fileSize: req.file.size
-  });
+  try {
+    const data = await pdfParse(req.file.buffer);
+
+    res.json({
+      message: "PDF text extracted successfully 🚀",
+      preview: data.text.substring(0, 500)
+    });
+
+  } catch (error) {
+    res.status(500).json({ message: "Error reading PDF" });
+  }
 });
 
 app.listen(PORT, () => {
