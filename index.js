@@ -61,3 +61,8 @@ app.post("/upload", upload.single("resume"), async (req, res) => {
       message: "Error processing file"
     });
   }
+  });
+
+app.listen(PORT, () => {
+  console.log("Server started on port " + PORT);
+});
