@@ -4,7 +4,7 @@ const cors = require("cors");
 const pdfParse = require("pdf-parse");
 const Tesseract = require("tesseract.js");
 const mammoth = require("mammoth");
-const { GoogleGenerativeAI } = require("@google/generative-ai");
+const { GoogleGenAI } = require("@google/genai");
 
 const app = express();
 const PORT = process.env.PORT || 10000;
@@ -16,28 +16,34 @@ const storage = multer.memoryStorage();
 const upload = multer({ storage });
 
 // ================= GEMINI SETUP =================
-const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
-const model = genAI.getGenerativeModel({
-  model: "gemini-1.0-pro"
+
+const genAI = new GoogleGenAI({
+  apiKey: process.env.GEMINI_API_KEY,
 });
 
 // ================= ROOT =================
+
 app.get("/", (req, res) => {
   res.send("ResuTransformer backend running 🚀");
 });
 
 // ================= TEST AI =================
+
 app.get("/test-ai", async (req, res) => {
   try {
-    const result = await model.generateContent("Say hello professionally");
-    const response = await result.response;
-    res.json({ success: true, reply: response.text() });
+    const response = await genAI.models.generateContent({
+      model: "gemini-1.5-flash-latest",
+      contents: "Say hello professionally",
+    });
+
+    res.json({ success: true, reply: response.text });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
 });
 
 // ================= FILE UPLOAD =================
+
 app.post("/upload", upload.single("resume"), async (req, res) => {
   try {
     if (!req.file) {
@@ -47,11 +53,13 @@ app.post("/upload", upload.single("resume"), async (req, res) => {
     const fileType = req.file.mimetype;
     let extractedText = "";
 
+    // PDF
     if (fileType === "application/pdf") {
       const data = await pdfParse(req.file.buffer);
       extractedText = data.text;
     }
 
+    // IMAGE
     else if (
       fileType === "image/jpeg" ||
       fileType === "image/png" ||
@@ -61,40 +69,39 @@ app.post("/upload", upload.single("resume"), async (req, res) => {
       extractedText = result.data.text;
     }
 
+    // DOCX
     else if (
       fileType ===
       "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
     ) {
       const result = await mammoth.extractRawText({
-        buffer: req.file.buffer
+        buffer: req.file.buffer,
       });
       extractedText = result.value;
-    }
-
-    else {
+    } else {
       return res.status(400).json({ message: "Unsupported file type" });
     }
 
     res.json({
       message: "Text extracted successfully 🚀",
       preview: extractedText.substring(0, 2000),
-      fullText: extractedText
+      fullText: extractedText,
     });
-
   } catch (error) {
     res.status(500).json({ message: "Error processing file" });
   }
 });
 
 // ================= ANALYZE =================
+
 app.post("/analyze", async (req, res) => {
   try {
     const { resumeText, role } = req.body;
 
     if (!resumeText || !role) {
-      return res.status(400).json({
-        message: "Resume text and role are required"
-      });
+      return res
+        .status(400)
+        .json({ message: "Resume text and role are required" });
     }
 
     const prompt = `
@@ -127,15 +134,15 @@ Resume:
 ${resumeText}
 `;
 
-    const result = await model.generateContent(prompt);
-    const response = await result.response;
-    const text = response.text();
+    const response = await genAI.models.generateContent({
+      model: "gemini-1.5-flash-latest",
+      contents: prompt,
+    });
 
     res.json({
       message: "AI analysis complete 🚀",
-      data: text
+      data: response.text,
     });
-
   } catch (error) {
     res.status(500).json({ message: error.message });
   }
