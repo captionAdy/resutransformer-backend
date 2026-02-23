@@ -32,11 +32,14 @@ app.get("/", (req, res) => {
 app.get("/test-ai", async (req, res) => {
   try {
     const response = await genAI.models.generateContent({
-      model: "gemini-1.5-flash-latest",
+      model: "gemini-1.0-pro",
       contents: "Say hello professionally",
     });
 
-    res.json({ success: true, reply: response.text });
+    res.json({
+      success: true,
+      reply: response.text,
+    });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
@@ -135,7 +138,7 @@ ${resumeText}
 `;
 
     const response = await genAI.models.generateContent({
-      model: "gemini-1.5-flash-latest",
+      model: "gemini-1.0-pro",
       contents: prompt,
     });
 
