@@ -4,7 +4,7 @@ const cors = require("cors");
 const pdfParse = require("pdf-parse");
 const Tesseract = require("tesseract.js");
 const mammoth = require("mammoth");
-const { GoogleGenAI } = require("@google/genai");
+const axios = require("axios");
 
 const app = express();
 const PORT = process.env.PORT || 10000;
@@ -15,34 +15,10 @@ app.use(express.json());
 const storage = multer.memoryStorage();
 const upload = multer({ storage });
 
-// ================= GEMINI SETUP =================
-
-const genAI = new GoogleGenAI({
-  apiKey: process.env.GEMINI_API_KEY,
-});
-
 // ================= ROOT =================
 
 app.get("/", (req, res) => {
   res.send("ResuTransformer backend running 🚀");
-});
-
-// ================= TEST AI =================
-
-app.get("/test-ai", async (req, res) => {
-  try {
-    const response = await genAI.models.generateContent({
-      model: "gemini-1.0-pro",
-      contents: "Say hello professionally",
-    });
-
-    res.json({
-      success: true,
-      reply: response.text,
-    });
-  } catch (error) {
-    res.status(500).json({ error: error.message });
-  }
 });
 
 // ================= FILE UPLOAD =================
@@ -81,7 +57,9 @@ app.post("/upload", upload.single("resume"), async (req, res) => {
         buffer: req.file.buffer,
       });
       extractedText = result.value;
-    } else {
+    }
+
+    else {
       return res.status(400).json({ message: "Unsupported file type" });
     }
 
@@ -90,21 +68,22 @@ app.post("/upload", upload.single("resume"), async (req, res) => {
       preview: extractedText.substring(0, 2000),
       fullText: extractedText,
     });
+
   } catch (error) {
     res.status(500).json({ message: "Error processing file" });
   }
 });
 
-// ================= ANALYZE =================
+// ================= ANALYZE (GROQ) =================
 
 app.post("/analyze", async (req, res) => {
   try {
     const { resumeText, role } = req.body;
 
     if (!resumeText || !role) {
-      return res
-        .status(400)
-        .json({ message: "Resume text and role are required" });
+      return res.status(400).json({
+        message: "Resume text and role are required"
+      });
     }
 
     const prompt = `
@@ -137,17 +116,33 @@ Resume:
 ${resumeText}
 `;
 
-    const response = await genAI.models.generateContent({
-      model: "gemini-1.0-pro",
-      contents: prompt,
-    });
+    const response = await axios.post(
+      "https://api.groq.com/openai/v1/chat/completions",
+      {
+        model: "llama3-70b-8192",
+        messages: [
+          { role: "system", content: "You are a resume analysis expert." },
+          { role: "user", content: prompt }
+        ],
+        temperature: 0.4
+      },
+      {
+        headers: {
+          Authorization: `Bearer ${process.env.GROQ_API_KEY}`,
+          "Content-Type": "application/json"
+        }
+      }
+    );
 
     res.json({
       message: "AI analysis complete 🚀",
-      data: response.text,
+      data: response.data.choices[0].message.content
     });
+
   } catch (error) {
-    res.status(500).json({ message: error.message });
+    res.status(500).json({
+      message: error.response?.data || error.message
+    });
   }
 });
 
