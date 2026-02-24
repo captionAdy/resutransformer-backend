@@ -5,6 +5,7 @@ const pdfParse = require("pdf-parse");
 const Tesseract = require("tesseract.js");
 const mammoth = require("mammoth");
 const axios = require("axios");
+const PDFDocument = require("pdfkit");
 
 const app = express();
 const PORT = process.env.PORT || 10000;
@@ -57,7 +58,6 @@ app.post("/upload", upload.single("resume"), async (req, res) => {
       preview: extractedText.substring(0, 2000),
       fullText: extractedText,
     });
-
   } catch (error) {
     console.log("Upload error:", error);
     res.status(500).json({ message: "Error processing file" });
@@ -66,8 +66,6 @@ app.post("/upload", upload.single("resume"), async (req, res) => {
 
 /* ================= ANALYZE ================= */
 app.post("/analyze", async (req, res) => {
-  console.log("Analyze route hit");
-
   try {
     const { resumeText, role, pack } = req.body;
 
@@ -79,7 +77,7 @@ app.post("/analyze", async (req, res) => {
 
     if (pack !== "basic" && pack !== "dominator") {
       return res.status(400).json({
-        message: "Invalid pack type. Must be 'basic' or 'dominator'",
+        message: "Pack must be 'basic' or 'dominator'",
       });
     }
 
@@ -89,12 +87,14 @@ app.post("/analyze", async (req, res) => {
       });
     }
 
-    const trimmedResume = resumeText.trim();
     const questionCount = pack === "basic" ? 15 : 25;
 
     const systemPrompt = `
 You are ResuTransformer AI.
-Return ONLY valid JSON. No markdown. No backticks.
+
+Return ONLY valid JSON.
+No markdown.
+No explanation.
 
 Structure must be EXACTLY:
 
@@ -124,7 +124,7 @@ Structure must be EXACTLY:
 
 Rules:
 - All scores must be integers between 0-100.
-- overallScore = (atsScore * 0.4 + recruiterScore * 0.6) rounded.
+- overallScore = rounded(atsScore * 0.4 + recruiterScore * 0.6)
 - Generate ${questionCount} interview questions.
 - If pack is basic, answers must be empty string.
 - If pack is dominator, provide structured professional answers.
@@ -135,7 +135,7 @@ Role: ${role}
 Pack: ${pack}
 
 Resume:
-${trimmedResume}
+${resumeText}
 `;
 
     const response = await axios.post(
@@ -157,7 +157,6 @@ ${trimmedResume}
     );
 
     let aiRaw = response.data.choices[0].message.content;
-
     aiRaw = aiRaw.replace(/```json/g, "").replace(/```/g, "").trim();
 
     const firstBrace = aiRaw.indexOf("{");
@@ -187,10 +186,9 @@ ${trimmedResume}
       pack,
       analysis: parsed,
     });
-
   } catch (error) {
     console.log("Analyze error:", error.response?.data || error.message);
-    return res.status(500).json({
+    res.status(500).json({
       message: error.response?.data || error.message,
     });
   }
