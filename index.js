@@ -6,7 +6,6 @@ const Tesseract = require("tesseract.js");
 const mammoth = require("mammoth");
 const axios = require("axios");
 const PDFDocument = require("pdfkit");
-const nodemailer = require("nodemailer");
 const fs = require("fs");
 const path = require("path");
 
@@ -15,18 +14,6 @@ const PORT = process.env.PORT || 10000;
 
 app.use(cors());
 app.use(express.json({ limit: "10mb" }));
-
-/* ================= SMTP ================= */
-
-const transporter = nodemailer.createTransport({
-  host: "smtp-relay.brevo.com",
-  port: 587,
-  secure: false,
-  auth: {
-    user: process.env.BREVO_SMTP_USER,
-    pass: process.env.BREVO_SMTP_PASS,
-  },
-});
 
 /* ================= ROOT ================= */
 
@@ -109,12 +96,9 @@ app.post("/analyze", async (req, res) => {
 
     const systemPrompt = `
 You are ResuTransformer AI.
-
 Return ONLY valid JSON.
-No markdown.
 
 Structure:
-
 {
   "scores": {
     "atsScore": 0,
@@ -131,20 +115,17 @@ Structure:
   },
   "interview": {
     "questions": [
-      {
-        "question": "",
-        "answer": ""
-      }
+      { "question": "", "answer": "" }
     ]
   }
 }
 
 Rules:
-- Scores 0-100 integer.
+- Scores 0-100 integer
 - overallScore = rounded (ats*0.4 + recruiter*0.6)
-- Generate ${questionCount} interview questions.
-- If pack basic, answers empty.
-- If dominator, provide structured professional answers.
+- Generate ${questionCount} interview questions
+- If basic, answers empty
+- If dominator, structured answers
 `;
 
     const userPrompt = `
@@ -187,9 +168,8 @@ ${resumeText}
     const doc = new PDFDocument();
     doc.pipe(fs.createWriteStream(filePath));
 
-    doc.fontSize(22).text("ResuTransformer AI Report", { align: "center" });
+    doc.fontSize(20).text("ResuTransformer AI Resume Report", { align: "center" });
     doc.moveDown();
-
     doc.fontSize(14).text(`Role: ${role}`);
     doc.text(`Pack: ${pack}`);
     doc.moveDown();
@@ -206,36 +186,56 @@ ${resumeText}
 
     doc.text("Strengths:");
     parsed.analysis.strengths.forEach((s) => doc.text("- " + s));
-
     doc.moveDown();
+
     doc.text("Weaknesses:");
     parsed.analysis.weaknesses.forEach((w) => doc.text("- " + w));
 
     doc.end();
 
-    /* ================= EMAIL SEND ================= */
+    /* ================= BREVO EMAIL VIA API ================= */
 
-    await transporter.sendMail({
-      from: `"ResuTransformer AI" <${process.env.BREVO_SMTP_USER}>`,
-      to: email,
-      subject: "Your Premium Resume Analysis Report",
-      text: `Your detailed report is attached.\n\nThank you for investing in your growth and becoming a Dominator.`,
-      attachments: [
-        {
-          filename: fileName,
-          path: filePath,
+    const fileBuffer = fs.readFileSync(filePath);
+    const base64File = fileBuffer.toString("base64");
+
+    await axios.post(
+      "https://api.brevo.com/v3/smtp/email",
+      {
+        sender: {
+          name: "ResuTransformer AI",
+          email: process.env.BREVO_SENDER_EMAIL
         },
-      ],
-    });
+        to: [{ email: email }],
+        subject: "Your Premium Resume Analysis Report",
+        htmlContent: `
+          <h2>Your Resume Report is Ready</h2>
+          <p>Thank you for investing in yourself and becoming a Dominator.</p>
+          <p>Your detailed PDF report is attached.</p>
+        `,
+        attachment: [
+          {
+            name: fileName,
+            content: base64File
+          }
+        ]
+      },
+      {
+        headers: {
+          "api-key": process.env.BREVO_API_KEY,
+          "Content-Type": "application/json"
+        }
+      }
+    );
 
     res.json({
       message: "AI analysis complete and PDF emailed successfully",
-      analysis: parsed,
+      analysis: parsed
     });
+
   } catch (error) {
-    console.log("Analyze error:", error);
+    console.log("Analyze error:", error.response?.data || error.message);
     res.status(500).json({
-      message: error.response?.data || error.message,
+      message: error.response?.data || error.message
     });
   }
 });
