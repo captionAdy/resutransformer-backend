@@ -16,13 +16,11 @@ const storage = multer.memoryStorage();
 const upload = multer({ storage });
 
 // ================= ROOT =================
-
 app.get("/", (req, res) => {
   res.send("ResuTransformer backend running 🚀");
 });
 
 // ================= FILE UPLOAD =================
-
 app.post("/upload", upload.single("resume"), async (req, res) => {
   try {
     if (!req.file) {
@@ -75,42 +73,41 @@ app.post("/upload", upload.single("resume"), async (req, res) => {
 });
 
 // ================= ANALYZE (GROQ) =================
-
 app.post("/analyze", async (req, res) => {
   try {
     const { resumeText, role } = req.body;
 
     if (!resumeText || !role) {
       return res.status(400).json({
-        message: "Resume text and role are required"
+        message: "Resume text and role are required",
       });
     }
 
-    const prompt = `
-You are a professional resume evaluator.
+    const systemPrompt = `
+You are ResuTransformer AI — a strict Resume Intelligence & ATS Evaluation Engine.
 
-Analyze the resume for the role: ${role}
-
-Return ONLY valid JSON in this structure:
+Return ONLY valid JSON in this exact structure:
 
 {
-  "analysis": {
-    "summary": "",
-    "strengths": [],
-    "weaknesses": [],
-    "ats_score": 0
+  "category_scores": {
+    "ats_keyword_optimization": { "score": 0, "reason": "" },
+    "skill_relevance": { "score": 0, "reason": "" },
+    "impact_quantification": { "score": 0, "reason": "" },
+    "formatting_ats_safety": { "score": 0, "reason": "" },
+    "logical_structure_flow": { "score": 0, "reason": "" },
+    "grammar_language_quality": { "score": 0, "reason": "" },
+    "cognitive_readability_simplicity": { "score": 0, "reason": "" },
+    "job_alignment_score": { "score": 0, "reason": "" }
   },
-  "improvements": {
-    "better_summary": "",
-    "improved_experience_points": [],
-    "keywords_to_add": []
-  },
-  "interview_questions": {
-    "technical": [],
-    "behavioral": [],
-    "resume_specific": []
-  }
+  "strengths": [],
+  "weaknesses": [],
+  "missing_keywords": [],
+  "critical_improvements": []
 }
+`;
+
+    const userPrompt = `
+Analyze this resume for the role: ${role}
 
 Resume:
 ${resumeText}
@@ -121,10 +118,11 @@ ${resumeText}
       {
         model: "llama3-70b-8192",
         messages: [
-          { role: "system", content: "You are a resume analysis expert." },
-          { role: "user", content: prompt }
+          { role: "system", content: systemPrompt },
+          { role: "user", content: userPrompt }
         ],
-        temperature: 0.4
+        temperature: 0.1,
+        top_p: 0.8
       },
       {
         headers: {
@@ -134,9 +132,21 @@ ${resumeText}
       }
     );
 
+    const aiRaw = response.data.choices[0].message.content;
+
+    let parsed;
+    try {
+      parsed = JSON.parse(aiRaw);
+    } catch (err) {
+      return res.status(500).json({
+        message: "AI returned invalid JSON",
+        raw: aiRaw
+      });
+    }
+
     res.json({
-      message: "AI analysis complete 🚀",
-      data: response.data.choices[0].message.content
+      message: "AI analysis complete",
+      analysis: parsed
     });
 
   } catch (error) {
