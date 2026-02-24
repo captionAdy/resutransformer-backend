@@ -10,7 +10,7 @@ const app = express();
 const PORT = process.env.PORT || 10000;
 
 app.use(cors());
-app.use(express.json());
+app.use(express.json({ limit: "10mb" }));
 
 const storage = multer.memoryStorage();
 const upload = multer({ storage });
@@ -30,13 +30,10 @@ app.post("/upload", upload.single("resume"), async (req, res) => {
     const fileType = req.file.mimetype;
     let extractedText = "";
 
-    // PDF
     if (fileType === "application/pdf") {
       const data = await pdfParse(req.file.buffer);
       extractedText = data.text;
-    }
-
-    // IMAGE
+    } 
     else if (
       fileType === "image/jpeg" ||
       fileType === "image/png" ||
@@ -44,9 +41,7 @@ app.post("/upload", upload.single("resume"), async (req, res) => {
     ) {
       const result = await Tesseract.recognize(req.file.buffer, "eng");
       extractedText = result.data.text;
-    }
-
-    // DOCX
+    } 
     else if (
       fileType ===
       "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
@@ -55,31 +50,38 @@ app.post("/upload", upload.single("resume"), async (req, res) => {
         buffer: req.file.buffer,
       });
       extractedText = result.value;
-    }
-
+    } 
     else {
       return res.status(400).json({ message: "Unsupported file type" });
     }
 
     res.json({
-      message: "Text extracted successfully 🚀",
+      message: "Text extracted successfully",
       preview: extractedText.substring(0, 2000),
       fullText: extractedText,
     });
-
   } catch (error) {
+    console.log("Upload error:", error);
     res.status(500).json({ message: "Error processing file" });
   }
 });
 
-// ================= ANALYZE (GROQ) =================
+// ================= ANALYZE =================
 app.post("/analyze", async (req, res) => {
+  console.log("Analyze route hit");
+
   try {
     const { resumeText, role } = req.body;
 
     if (!resumeText || !role) {
       return res.status(400).json({
         message: "Resume text and role are required",
+      });
+    }
+
+    if (!process.env.GROQ_API_KEY) {
+      return res.status(500).json({
+        message: "GROQ_API_KEY not set in environment variables",
       });
     }
 
@@ -119,39 +121,42 @@ ${resumeText}
         model: "llama3-70b-8192",
         messages: [
           { role: "system", content: systemPrompt },
-          { role: "user", content: userPrompt }
+          { role: "user", content: userPrompt },
         ],
-        temperature: 0.1,
-        top_p: 0.8
+        temperature: 0.2,
       },
       {
         headers: {
           Authorization: `Bearer ${process.env.GROQ_API_KEY}`,
-          "Content-Type": "application/json"
-        }
+          "Content-Type": "application/json",
+        },
       }
     );
 
     const aiRaw = response.data.choices[0].message.content;
 
     let parsed;
+
     try {
       parsed = JSON.parse(aiRaw);
     } catch (err) {
+      console.log("Invalid JSON from AI:", aiRaw);
       return res.status(500).json({
         message: "AI returned invalid JSON",
-        raw: aiRaw
+        raw: aiRaw,
       });
     }
 
     res.json({
       message: "AI analysis complete",
-      analysis: parsed
+      analysis: parsed,
     });
 
   } catch (error) {
+    console.log("Analyze error:", error.response?.data || error.message);
+
     res.status(500).json({
-      message: error.response?.data || error.message
+      message: error.response?.data || error.message,
     });
   }
 });
