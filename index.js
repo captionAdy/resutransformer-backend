@@ -15,12 +15,12 @@ app.use(express.json({ limit: "10mb" }));
 const storage = multer.memoryStorage();
 const upload = multer({ storage });
 
-// ================= ROOT =================
+/* ================= ROOT ================= */
 app.get("/", (req, res) => {
   res.send("ResuTransformer backend running 🚀");
 });
 
-// ================= FILE UPLOAD =================
+/* ================= FILE UPLOAD ================= */
 app.post("/upload", upload.single("resume"), async (req, res) => {
   try {
     if (!req.file) {
@@ -33,16 +33,14 @@ app.post("/upload", upload.single("resume"), async (req, res) => {
     if (fileType === "application/pdf") {
       const data = await pdfParse(req.file.buffer);
       extractedText = data.text;
-    } 
-    else if (
+    } else if (
       fileType === "image/jpeg" ||
       fileType === "image/png" ||
       fileType === "image/jpg"
     ) {
       const result = await Tesseract.recognize(req.file.buffer, "eng");
       extractedText = result.data.text;
-    } 
-    else if (
+    } else if (
       fileType ===
       "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
     ) {
@@ -50,8 +48,7 @@ app.post("/upload", upload.single("resume"), async (req, res) => {
         buffer: req.file.buffer,
       });
       extractedText = result.value;
-    } 
-    else {
+    } else {
       return res.status(400).json({ message: "Unsupported file type" });
     }
 
@@ -66,7 +63,7 @@ app.post("/upload", upload.single("resume"), async (req, res) => {
   }
 });
 
-// ================= ANALYZE =================
+/* ================= ANALYZE ================= */
 app.post("/analyze", async (req, res) => {
   console.log("Analyze route hit");
 
@@ -88,7 +85,9 @@ app.post("/analyze", async (req, res) => {
     const systemPrompt = `
 You are ResuTransformer AI — a strict Resume Intelligence & ATS Evaluation Engine.
 
-Return ONLY valid JSON in this exact structure:
+Return ONLY valid JSON. No markdown. No explanation. No backticks.
+
+Structure must be EXACTLY:
 
 {
   "category_scores": {
@@ -133,17 +132,37 @@ ${resumeText}
       }
     );
 
-    const aiRaw = response.data.choices[0].message.content;
+    let aiRaw = response.data.choices[0].message.content;
+
+    // 🔥 Remove markdown formatting
+    aiRaw = aiRaw
+      .replace(/```json/g, "")
+      .replace(/```/g, "")
+      .trim();
+
+    // 🔥 Extract JSON safely
+    const firstBrace = aiRaw.indexOf("{");
+    const lastBrace = aiRaw.lastIndexOf("}");
+
+    if (firstBrace === -1 || lastBrace === -1) {
+      console.log("AI malformed response:", aiRaw);
+      return res.status(500).json({
+        message: "AI response malformed",
+        raw: aiRaw,
+      });
+    }
+
+    const cleanedJson = aiRaw.substring(firstBrace, lastBrace + 1);
 
     let parsed;
 
     try {
-      parsed = JSON.parse(aiRaw);
+      parsed = JSON.parse(cleanedJson);
     } catch (err) {
-      console.log("Invalid JSON from AI:", aiRaw);
+      console.log("Invalid JSON from AI:", cleanedJson);
       return res.status(500).json({
         message: "AI returned invalid JSON",
-        raw: aiRaw,
+        raw: cleanedJson,
       });
     }
 
@@ -154,7 +173,6 @@ ${resumeText}
 
   } catch (error) {
     console.log("Analyze error:", error.response?.data || error.message);
-
     res.status(500).json({
       message: error.response?.data || error.message,
     });
