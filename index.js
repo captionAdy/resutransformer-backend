@@ -6,6 +6,9 @@ const Tesseract = require("tesseract.js");
 const mammoth = require("mammoth");
 const axios = require("axios");
 const PDFDocument = require("pdfkit");
+const nodemailer = require("nodemailer");
+const fs = require("fs");
+const path = require("path");
 
 const app = express();
 const PORT = process.env.PORT || 10000;
@@ -13,12 +16,26 @@ const PORT = process.env.PORT || 10000;
 app.use(cors());
 app.use(express.json({ limit: "10mb" }));
 
+/* ================= SMTP ================= */
+
+const transporter = nodemailer.createTransport({
+  host: "smtp-relay.brevo.com",
+  port: 587,
+  secure: false,
+  auth: {
+    user: process.env.BREVO_SMTP_USER,
+    pass: process.env.BREVO_SMTP_PASS,
+  },
+});
+
 /* ================= ROOT ================= */
+
 app.get("/", (req, res) => {
   res.send("ResuTransformer backend running 🚀");
 });
 
 /* ================= FILE UPLOAD ================= */
+
 const storage = multer.memoryStorage();
 const upload = multer({ storage });
 
@@ -65,13 +82,14 @@ app.post("/upload", upload.single("resume"), async (req, res) => {
 });
 
 /* ================= ANALYZE ================= */
+
 app.post("/analyze", async (req, res) => {
   try {
-    const { resumeText, role, pack } = req.body;
+    const { resumeText, role, pack, email } = req.body;
 
-    if (!resumeText || !role || !pack) {
+    if (!resumeText || !role || !pack || !email) {
       return res.status(400).json({
-        message: "Resume text, role and pack are required",
+        message: "resumeText, role, pack and email are required",
       });
     }
 
@@ -94,9 +112,8 @@ You are ResuTransformer AI.
 
 Return ONLY valid JSON.
 No markdown.
-No explanation.
 
-Structure must be EXACTLY:
+Structure:
 
 {
   "scores": {
@@ -123,11 +140,11 @@ Structure must be EXACTLY:
 }
 
 Rules:
-- All scores must be integers between 0-100.
-- overallScore = rounded(atsScore * 0.4 + recruiterScore * 0.6)
+- Scores 0-100 integer.
+- overallScore = rounded (ats*0.4 + recruiter*0.6)
 - Generate ${questionCount} interview questions.
-- If pack is basic, answers must be empty string.
-- If pack is dominator, provide structured professional answers.
+- If pack basic, answers empty.
+- If dominator, provide structured professional answers.
 `;
 
     const userPrompt = `
@@ -156,38 +173,67 @@ ${resumeText}
       }
     );
 
-    let aiRaw = response.data.choices[0].message.content;
-    aiRaw = aiRaw.replace(/```json/g, "").replace(/```/g, "").trim();
-
+    let aiRaw = response.data.choices[0].message.content.trim();
     const firstBrace = aiRaw.indexOf("{");
     const lastBrace = aiRaw.lastIndexOf("}");
-
-    if (firstBrace === -1 || lastBrace === -1) {
-      return res.status(500).json({
-        message: "AI response malformed",
-        raw: aiRaw,
-      });
-    }
-
     const cleanedJson = aiRaw.substring(firstBrace, lastBrace + 1);
+    const parsed = JSON.parse(cleanedJson);
 
-    let parsed;
-    try {
-      parsed = JSON.parse(cleanedJson);
-    } catch (err) {
-      return res.status(500).json({
-        message: "AI returned invalid JSON",
-        raw: cleanedJson,
-      });
-    }
+    /* ================= PDF GENERATION ================= */
 
-    return res.json({
-      message: "AI analysis complete",
-      pack,
+    const fileName = `report_${Date.now()}.pdf`;
+    const filePath = path.join(__dirname, fileName);
+
+    const doc = new PDFDocument();
+    doc.pipe(fs.createWriteStream(filePath));
+
+    doc.fontSize(22).text("ResuTransformer AI Report", { align: "center" });
+    doc.moveDown();
+
+    doc.fontSize(14).text(`Role: ${role}`);
+    doc.text(`Pack: ${pack}`);
+    doc.moveDown();
+
+    doc.text(`ATS Score: ${parsed.scores.atsScore}`);
+    doc.text(`Recruiter Score: ${parsed.scores.recruiterScore}`);
+    doc.text(`Overall Score: ${parsed.scores.overallScore}`);
+    doc.moveDown();
+
+    doc.text("Summary:");
+    doc.moveDown(0.5);
+    doc.fontSize(12).text(parsed.analysis.summary);
+    doc.moveDown();
+
+    doc.text("Strengths:");
+    parsed.analysis.strengths.forEach((s) => doc.text("- " + s));
+
+    doc.moveDown();
+    doc.text("Weaknesses:");
+    parsed.analysis.weaknesses.forEach((w) => doc.text("- " + w));
+
+    doc.end();
+
+    /* ================= EMAIL SEND ================= */
+
+    await transporter.sendMail({
+      from: `"ResuTransformer AI" <${process.env.BREVO_SMTP_USER}>`,
+      to: email,
+      subject: "Your Premium Resume Analysis Report",
+      text: `Your detailed report is attached.\n\nThank you for investing in your growth and becoming a Dominator.`,
+      attachments: [
+        {
+          filename: fileName,
+          path: filePath,
+        },
+      ],
+    });
+
+    res.json({
+      message: "AI analysis complete and PDF emailed successfully",
       analysis: parsed,
     });
   } catch (error) {
-    console.log("Analyze error:", error.response?.data || error.message);
+    console.log("Analyze error:", error);
     res.status(500).json({
       message: error.response?.data || error.message,
     });
@@ -195,6 +241,7 @@ ${resumeText}
 });
 
 /* ================= SERVER START ================= */
+
 app.listen(PORT, () => {
   console.log("Server started on port " + PORT);
 });
