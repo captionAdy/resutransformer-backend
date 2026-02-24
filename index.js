@@ -68,7 +68,7 @@ app.post("/analyze", async (req, res) => {
   console.log("Analyze route hit");
 
   try {
-    const { resumeText, role } = req.body;
+    const { resumeText, role, pack } = req.body;
 
     if (!resumeText || !role) {
       return res.status(400).json({
