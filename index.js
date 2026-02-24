@@ -160,40 +160,47 @@ ${resumeText}
     const cleanedJson = aiRaw.substring(firstBrace, lastBrace + 1);
     const parsed = JSON.parse(cleanedJson);
 
-    /* ================= PDF GENERATION ================= */
+    /* ================= SAFE PDF GENERATION ================= */
 
     const fileName = `report_${Date.now()}.pdf`;
     const filePath = path.join(__dirname, fileName);
 
-    const doc = new PDFDocument();
-    doc.pipe(fs.createWriteStream(filePath));
+    await new Promise((resolve, reject) => {
+      const doc = new PDFDocument();
+      const stream = fs.createWriteStream(filePath);
 
-    doc.fontSize(20).text("ResuTransformer AI Resume Report", { align: "center" });
-    doc.moveDown();
-    doc.fontSize(14).text(`Role: ${role}`);
-    doc.text(`Pack: ${pack}`);
-    doc.moveDown();
+      doc.pipe(stream);
 
-    doc.text(`ATS Score: ${parsed.scores.atsScore}`);
-    doc.text(`Recruiter Score: ${parsed.scores.recruiterScore}`);
-    doc.text(`Overall Score: ${parsed.scores.overallScore}`);
-    doc.moveDown();
+      doc.fontSize(20).text("ResuTransformer AI Resume Report", { align: "center" });
+      doc.moveDown();
+      doc.fontSize(14).text(`Role: ${role}`);
+      doc.text(`Pack: ${pack}`);
+      doc.moveDown();
 
-    doc.text("Summary:");
-    doc.moveDown(0.5);
-    doc.fontSize(12).text(parsed.analysis.summary);
-    doc.moveDown();
+      doc.text(`ATS Score: ${parsed.scores.atsScore}`);
+      doc.text(`Recruiter Score: ${parsed.scores.recruiterScore}`);
+      doc.text(`Overall Score: ${parsed.scores.overallScore}`);
+      doc.moveDown();
 
-    doc.text("Strengths:");
-    parsed.analysis.strengths.forEach((s) => doc.text("- " + s));
-    doc.moveDown();
+      doc.text("Summary:");
+      doc.moveDown(0.5);
+      doc.fontSize(12).text(parsed.analysis.summary);
+      doc.moveDown();
 
-    doc.text("Weaknesses:");
-    parsed.analysis.weaknesses.forEach((w) => doc.text("- " + w));
+      doc.text("Strengths:");
+      parsed.analysis.strengths.forEach((s) => doc.text("- " + s));
+      doc.moveDown();
 
-    doc.end();
+      doc.text("Weaknesses:");
+      parsed.analysis.weaknesses.forEach((w) => doc.text("- " + w));
 
-    /* ================= BREVO EMAIL VIA API ================= */
+      doc.end();
+
+      stream.on("finish", resolve);
+      stream.on("error", reject);
+    });
+
+    /* ================= BREVO EMAIL ================= */
 
     const fileBuffer = fs.readFileSync(filePath);
     const base64File = fileBuffer.toString("base64");
@@ -203,9 +210,9 @@ ${resumeText}
       {
         sender: {
           name: "ResuTransformer AI",
-          email: process.env.BREVO_SENDER_EMAIL
+          email: process.env.BREVO_SENDER_EMAIL,
         },
-        to: [{ email: email }],
+        to: [{ email }],
         subject: "Your Premium Resume Analysis Report",
         htmlContent: `
           <h2>Your Resume Report is Ready</h2>
@@ -215,27 +222,29 @@ ${resumeText}
         attachment: [
           {
             name: fileName,
-            content: base64File
-          }
-        ]
+            content: base64File,
+          },
+        ],
       },
       {
         headers: {
           "api-key": process.env.BREVO_API_KEY,
-          "Content-Type": "application/json"
-        }
+          "Content-Type": "application/json",
+        },
       }
     );
 
+    fs.unlinkSync(filePath);
+
     res.json({
       message: "AI analysis complete and PDF emailed successfully",
-      analysis: parsed
+      analysis: parsed,
     });
 
   } catch (error) {
     console.log("Analyze error:", error.response?.data || error.message);
     res.status(500).json({
-      message: error.response?.data || error.message
+      message: error.response?.data || error.message,
     });
   }
 });
