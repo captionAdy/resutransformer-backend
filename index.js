@@ -1,68 +1,3 @@
-const express = require("express");
-const multer = require("multer");
-const cors = require("cors");
-const pdfParse = require("pdf-parse");
-const Tesseract = require("tesseract.js");
-const mammoth = require("mammoth");
-const axios = require("axios");
-
-const app = express();
-const PORT = process.env.PORT || 10000;
-
-app.use(cors());
-app.use(express.json({ limit: "10mb" }));
-
-const storage = multer.memoryStorage();
-const upload = multer({ storage });
-
-/* ================= ROOT ================= */
-app.get("/", (req, res) => {
-  res.send("ResuTransformer backend running 🚀");
-});
-
-/* ================= FILE UPLOAD ================= */
-app.post("/upload", upload.single("resume"), async (req, res) => {
-  try {
-    if (!req.file) {
-      return res.status(400).json({ message: "No file uploaded" });
-    }
-
-    const fileType = req.file.mimetype;
-    let extractedText = "";
-
-    if (fileType === "application/pdf") {
-      const data = await pdfParse(req.file.buffer);
-      extractedText = data.text;
-    } else if (
-      fileType === "image/jpeg" ||
-      fileType === "image/png" ||
-      fileType === "image/jpg"
-    ) {
-      const result = await Tesseract.recognize(req.file.buffer, "eng");
-      extractedText = result.data.text;
-    } else if (
-      fileType ===
-      "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-    ) {
-      const result = await mammoth.extractRawText({
-        buffer: req.file.buffer,
-      });
-      extractedText = result.value;
-    } else {
-      return res.status(400).json({ message: "Unsupported file type" });
-    }
-
-    res.json({
-      message: "Text extracted successfully",
-      preview: extractedText.substring(0, 2000),
-      fullText: extractedText,
-    });
-  } catch (error) {
-    console.log("Upload error:", error);
-    res.status(500).json({ message: "Error processing file" });
-  }
-});
-
 /* ================= ANALYZE ================= */
 app.post("/analyze", async (req, res) => {
   console.log("Analyze route hit");
@@ -70,9 +5,16 @@ app.post("/analyze", async (req, res) => {
   try {
     const { resumeText, role, pack } = req.body;
 
-    if (!resumeText || !role) {
+    // ✅ Basic validation
+    if (!resumeText || !role || !pack) {
       return res.status(400).json({
-        message: "Resume text and role are required",
+        message: "Resume text, role and pack are required",
+      });
+    }
+
+    if (pack !== "basic" && pack !== "dominator") {
+      return res.status(400).json({
+        message: "Invalid pack type. Must be 'basic' or 'dominator'",
       });
     }
 
@@ -82,38 +24,69 @@ app.post("/analyze", async (req, res) => {
       });
     }
 
-    const systemPrompt = `
-You are ResuTransformer AI — a strict Resume Intelligence & ATS Evaluation Engine.
+    const trimmedResume = resumeText.trim();
 
-Return ONLY valid JSON. No markdown. No explanation. No backticks.
+    if (trimmedResume.length < 50) {
+      return res.status(400).json({
+        message: "Resume text too short",
+      });
+    }
+
+    // 🔥 Pack logic (for future expansion)
+    const questionCount = pack === "basic" ? 15 : 25;
+
+    // ================= SYSTEM PROMPT =================
+    const systemPrompt = `
+You are ResuTransformer AI.
+
+Return ONLY valid JSON.
+No markdown.
+No explanation.
+No backticks.
 
 Structure must be EXACTLY:
 
 {
-  "category_scores": {
-    "ats_keyword_optimization": { "score": 0, "reason": "" },
-    "skill_relevance": { "score": 0, "reason": "" },
-    "impact_quantification": { "score": 0, "reason": "" },
-    "formatting_ats_safety": { "score": 0, "reason": "" },
-    "logical_structure_flow": { "score": 0, "reason": "" },
-    "grammar_language_quality": { "score": 0, "reason": "" },
-    "cognitive_readability_simplicity": { "score": 0, "reason": "" },
-    "job_alignment_score": { "score": 0, "reason": "" }
+  "scores": {
+    "atsScore": 0,
+    "recruiterScore": 0,
+    "overallScore": 0,
+    "selectionReadiness": "",
+    "resumeCategory": ""
   },
-  "strengths": [],
-  "weaknesses": [],
-  "missing_keywords": [],
-  "critical_improvements": []
+  "analysis": {
+    "summary": "",
+    "strengths": [],
+    "weaknesses": [],
+    "improvements": []
+  },
+  "interview": {
+    "questions": [
+      {
+        "question": "",
+        "answer": ""
+      }
+    ]
+  }
 }
+
+Rules:
+- All scores must be integers between 0–100.
+- overallScore must equal (atsScore * 0.4 + recruiterScore * 0.6) rounded.
+- Generate ${questionCount} interview questions.
+- If pack is basic, answers must be empty string.
+- If pack is dominator, provide professional structured answers.
 `;
 
     const userPrompt = `
-Analyze this resume for the role: ${role}
+Role: ${role}
+Pack: ${pack}
 
 Resume:
-${resumeText}
+${trimmedResume}
 `;
 
+    // ================= GROQ CALL =================
     const response = await axios.post(
       "https://api.groq.com/openai/v1/chat/completions",
       {
@@ -134,18 +107,14 @@ ${resumeText}
 
     let aiRaw = response.data.choices[0].message.content;
 
-    // 🔥 Remove markdown formatting
-    aiRaw = aiRaw
-      .replace(/```json/g, "")
-      .replace(/```/g, "")
-      .trim();
+    // Remove markdown if AI adds it
+    aiRaw = aiRaw.replace(/```json/g, "").replace(/```/g, "").trim();
 
-    // 🔥 Extract JSON safely
+    // Extract JSON safely
     const firstBrace = aiRaw.indexOf("{");
     const lastBrace = aiRaw.lastIndexOf("}");
 
     if (firstBrace === -1 || lastBrace === -1) {
-      console.log("AI malformed response:", aiRaw);
       return res.status(500).json({
         message: "AI response malformed",
         raw: aiRaw,
@@ -159,26 +128,22 @@ ${resumeText}
     try {
       parsed = JSON.parse(cleanedJson);
     } catch (err) {
-      console.log("Invalid JSON from AI:", cleanedJson);
       return res.status(500).json({
         message: "AI returned invalid JSON",
         raw: cleanedJson,
       });
     }
 
-    res.json({
+    return res.json({
       message: "AI analysis complete",
+      pack: pack,
       analysis: parsed,
     });
 
   } catch (error) {
     console.log("Analyze error:", error.response?.data || error.message);
-    res.status(500).json({
+    return res.status(500).json({
       message: error.response?.data || error.message,
     });
   }
-});
-
-app.listen(PORT, () => {
-  console.log("Server started on port " + PORT);
 });
