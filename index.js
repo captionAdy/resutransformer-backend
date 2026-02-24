@@ -8,12 +8,21 @@ const axios = require("axios");
 const PDFDocument = require("pdfkit");
 const fs = require("fs");
 const path = require("path");
+const os = require("os");
 
 const app = express();
 const PORT = process.env.PORT || 10000;
 
 app.use(cors());
 app.use(express.json({ limit: "10mb" }));
+
+/* ================= TEMP DIRECTORY ================= */
+
+const TEMP_DIR = path.join(os.tmpdir(), "resutransformer");
+
+if (!fs.existsSync(TEMP_DIR)) {
+  fs.mkdirSync(TEMP_DIR);
+}
 
 /* ================= ROOT ================= */
 
@@ -157,7 +166,7 @@ ${resumeText}
     /* ================= PDF GENERATION ================= */
 
     const fileName = `report_${Date.now()}.pdf`;
-    const filePath = path.join(__dirname, fileName);
+    const filePath = path.join(TEMP_DIR, fileName);
 
     await new Promise((resolve, reject) => {
       const doc = new PDFDocument();
@@ -165,7 +174,9 @@ ${resumeText}
 
       doc.pipe(stream);
 
-      doc.fontSize(20).text("ResuTransformer AI Resume Report", { align: "center" });
+      doc.fontSize(20).text("ResuTransformer AI Resume Report", {
+        align: "center",
+      });
       doc.moveDown();
 
       doc.fontSize(14).text(`Role: ${role}`);
@@ -183,11 +194,21 @@ ${resumeText}
       doc.moveDown();
 
       doc.text("Strengths:");
-      parsed.analysis.strengths.forEach((s) => doc.text("- " + s));
+      parsed.analysis.strengths.forEach((s) =>
+        doc.text("- " + s)
+      );
       doc.moveDown();
 
       doc.text("Weaknesses:");
-      parsed.analysis.weaknesses.forEach((w) => doc.text("- " + w));
+      parsed.analysis.weaknesses.forEach((w) =>
+        doc.text("- " + w)
+      );
+      doc.moveDown();
+
+      doc.text("Improvements:");
+      parsed.analysis.improvements.forEach((i) =>
+        doc.text("- " + i)
+      );
 
       doc.end();
 
@@ -195,20 +216,33 @@ ${resumeText}
       stream.on("error", reject);
     });
 
-    // Delete temp file
-    fs.unlinkSync(filePath);
-
     res.json({
-      message: "Your resume analysis is complete. Review your detailed report below.",
+      message: "Analysis complete",
       analysis: parsed,
+      pdfUrl: `/download/${fileName}`,
     });
-
   } catch (error) {
     console.log("Analyze error:", error.response?.data || error.message);
     res.status(500).json({
       message: error.response?.data || error.message,
     });
   }
+});
+
+/* ================= DOWNLOAD ================= */
+
+app.get("/download/:filename", (req, res) => {
+  const filePath = path.join(TEMP_DIR, req.params.filename);
+
+  if (!fs.existsSync(filePath)) {
+    return res.status(404).json({ message: "File not found" });
+  }
+
+  res.download(filePath, (err) => {
+    if (!err) {
+      fs.unlink(filePath, () => {});
+    }
+  });
 });
 
 /* ================= SERVER START ================= */
