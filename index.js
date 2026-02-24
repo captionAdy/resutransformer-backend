@@ -148,6 +148,7 @@ ${resumeText}
           { role: "user", content: userPrompt },
         ],
         temperature: 0.2,
+        max_tokens: 3000
       },
       {
         headers: {
@@ -158,10 +159,22 @@ ${resumeText}
     );
 
     let aiRaw = response.data.choices[0].message.content.trim();
-    const firstBrace = aiRaw.indexOf("{");
-    const lastBrace = aiRaw.lastIndexOf("}");
-    const cleanedJson = aiRaw.substring(firstBrace, lastBrace + 1);
-    const parsed = JSON.parse(cleanedJson);
+    let parsed;
+
+    try {
+      const firstBrace = aiRaw.indexOf("{");
+      const lastBrace = aiRaw.lastIndexOf("}");
+
+      if (firstBrace === -1 || lastBrace === -1) {
+        throw new Error("No JSON found");
+      }
+
+      const cleanedJson = aiRaw.substring(firstBrace, lastBrace + 1);
+      parsed = JSON.parse(cleanedJson);
+    } catch (err) {
+      console.log("RAW AI RESPONSE:", aiRaw);
+      throw new Error("AI returned invalid JSON");
+    }
 
     /* ================= PDF GENERATION ================= */
 
@@ -174,9 +187,7 @@ ${resumeText}
 
       doc.pipe(stream);
 
-      doc.fontSize(20).text("ResuTransformer AI Resume Report", {
-        align: "center",
-      });
+      doc.fontSize(20).text("ResuTransformer AI Resume Report", { align: "center" });
       doc.moveDown();
 
       doc.fontSize(14).text(`Role: ${role}`);
@@ -194,21 +205,15 @@ ${resumeText}
       doc.moveDown();
 
       doc.text("Strengths:");
-      parsed.analysis.strengths.forEach((s) =>
-        doc.text("- " + s)
-      );
+      parsed.analysis.strengths.forEach((s) => doc.text("- " + s));
       doc.moveDown();
 
       doc.text("Weaknesses:");
-      parsed.analysis.weaknesses.forEach((w) =>
-        doc.text("- " + w)
-      );
+      parsed.analysis.weaknesses.forEach((w) => doc.text("- " + w));
       doc.moveDown();
 
       doc.text("Improvements:");
-      parsed.analysis.improvements.forEach((i) =>
-        doc.text("- " + i)
-      );
+      parsed.analysis.improvements.forEach((i) => doc.text("- " + i));
 
       doc.end();
 
@@ -221,6 +226,7 @@ ${resumeText}
       analysis: parsed,
       pdfUrl: `/download/${fileName}`,
     });
+
   } catch (error) {
     console.log("Analyze error:", error.response?.data || error.message);
     res.status(500).json({
