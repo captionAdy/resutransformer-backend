@@ -72,17 +72,11 @@ app.post("/upload", upload.single("resume"), async (req, res) => {
 
 app.post("/analyze", async (req, res) => {
   try {
-    const { resumeText, role, pack, email } = req.body;
+    const { resumeText, role, pack } = req.body;
 
-    if (!resumeText || !role || !pack || !email) {
+    if (!resumeText || !role || !pack) {
       return res.status(400).json({
-        message: "resumeText, role, pack and email are required",
-      });
-    }
-
-    if (pack !== "basic" && pack !== "dominator") {
-      return res.status(400).json({
-        message: "Pack must be 'basic' or 'dominator'",
+        message: "resumeText, role and pack are required",
       });
     }
 
@@ -160,7 +154,7 @@ ${resumeText}
     const cleanedJson = aiRaw.substring(firstBrace, lastBrace + 1);
     const parsed = JSON.parse(cleanedJson);
 
-    /* ================= SAFE PDF GENERATION ================= */
+    /* ================= PDF GENERATION ================= */
 
     const fileName = `report_${Date.now()}.pdf`;
     const filePath = path.join(__dirname, fileName);
@@ -173,6 +167,7 @@ ${resumeText}
 
       doc.fontSize(20).text("ResuTransformer AI Resume Report", { align: "center" });
       doc.moveDown();
+
       doc.fontSize(14).text(`Role: ${role}`);
       doc.text(`Pack: ${pack}`);
       doc.moveDown();
@@ -200,44 +195,11 @@ ${resumeText}
       stream.on("error", reject);
     });
 
-    /* ================= BREVO EMAIL ================= */
-
-    const fileBuffer = fs.readFileSync(filePath);
-    const base64File = fileBuffer.toString("base64");
-
-    await axios.post(
-      "https://api.brevo.com/v3/smtp/email",
-      {
-        sender: {
-          name: "ResuTransformer AI",
-          email: process.env.BREVO_SENDER_EMAIL,
-        },
-        to: [{ email }],
-        subject: "Your Premium Resume Analysis Report",
-        htmlContent: `
-          <h2>Your Resume Report is Ready</h2>
-          <p>Thank you for investing in yourself and becoming a Dominator.</p>
-          <p>Your detailed PDF report is attached.</p>
-        `,
-        attachment: [
-          {
-            name: fileName,
-            content: base64File,
-          },
-        ],
-      },
-      {
-        headers: {
-          "api-key": process.env.BREVO_API_KEY,
-          "Content-Type": "application/json",
-        },
-      }
-    );
-
+    // Delete temp file
     fs.unlinkSync(filePath);
 
     res.json({
-      message: "AI analysis complete and PDF emailed successfully",
+      message: "Your resume analysis is complete. Review your detailed report below.",
       analysis: parsed,
     });
 
